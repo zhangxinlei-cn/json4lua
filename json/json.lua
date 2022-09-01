@@ -55,24 +55,31 @@ local encodeString
 local isArray
 local isEncodable
 
+-- Const
+local rulesMeta = {
+  indent = 0,  -- The number of space characters used in indentation
+  depth = 1,
+  include__ = true,  -- 是否包含: key 为 __xxx or xxx__
+  includeInvalidData = false,  -- 是否导出不支持的格式 如function userData
+}
 -----------------------------------------------------------------------------
 -- PUBLIC FUNCTIONS
 -----------------------------------------------------------------------------
 --- Encodes an arbitrary Lua object / variable.
 -- @param v The Lua object / variable to be JSON encoded.
--- @param indent: The number of space characters used in indentation
 -- @return String containing the JSON encoding in internal Lua string format (i.e. not unicode)
-function json.encode (v, indent, depth)
-  if indent == nil then
-    indent = 0
+function json.encode (v, rules)
+  if not rules then
+    rules = {}
   end
-  if depth == nil then
-    depth = 1
+  if not getmetatable(rules) then
+    setmetatable(rules, {__index=rulesMeta})
   end
-  local lastIndentStr = string.rep(" ", indent * (depth - 1))
-  local indentStr = string.rep(" ", indent * depth)
-  depth = depth + 1
-  local newlineStr = indent > 0 and "\n" or ""
+
+  local lastIndentStr = string.rep(" ", rules.indent * (rules.depth - 1))
+  local indentStr = string.rep(" ", rules.indent * rules.depth)
+  rules.depth = rules.depth + 1
+  local newlineStr = rules.indent > 0 and "\n" or ""
 
   -- Handle nil values
   if v==nil then
@@ -98,12 +105,21 @@ function json.encode (v, indent, depth)
     local bArray, maxCount = isArray(v)
     if bArray then
       for i = 1,maxCount do
-        table.insert(rval, indentStr .. json.encode(v[i], indent, depth))
+        table.insert(rval, indentStr .. json.encode(v[i], rules))
       end
     else	-- An object, not an array
       for i,j in pairs(v) do
-        if isEncodable(i) and isEncodable(j) then
-          table.insert(rval, indentStr .. '"' .. json_private.encodeString(i) .. '":' .. json.encode(j, indent, depth))
+        while true do
+          if rules.include__ then
+            if type(k) == "string" and (string.match(k, '^__') or string.match(k, '__$')) then
+              break
+            end
+          end
+          if rules.includeInvalidData or (isEncodable(i) and isEncodable(j)) then
+            local key = isEncodable(i) and json_private.encodeString(i) or tostring(i)
+            local value = isEncodable(j) and json.encode(j, rules) or '"' .. tostring(j) .. '"'
+            table.insert(rval, indentStr .. '"' .. key .. '":' .. value)
+          end
         end
       end
     end
@@ -434,20 +450,17 @@ end
 function isArray(t)
   -- Next we count all the elements, ensuring that any non-indexed elements are not-encodable
   -- (with the possible exception of 'n')
-  local maxIndex = 0
-  for k,v in pairs(t) do
-    if (type(k)=='number' and math.floor(k)==k and 1<=k) then	-- k,v is an indexed pair
-      if (not isEncodable(v)) then return false end	-- All array elements must be encodable
-      maxIndex = math.max(maxIndex,k)
-    else
-      if (k=='n') then
-        if v ~= table.getn(t) then return false end  -- False if n does not hold the number of elements
-      else -- Else of (k=='n')
-        if isEncodable(v) then return false end
-      end  -- End of (k~='n')
-    end -- End of k,v not an indexed pair
-  end  -- End of loop across all pairs
-  return true, maxIndex
+  local num = 0
+  for k, v in pairs(t) do
+    num = num + 1
+    if (type(k) ~= 'number' or math.floor(k) ~= k or k < 1) then
+      return false
+    end
+  end
+  if #t ~= num then
+    return false
+  end
+  return true, num
 end
 
 --- Determines whether the given Lua object / table / variable can be JSON encoded. The only
