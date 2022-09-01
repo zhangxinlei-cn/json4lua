@@ -58,7 +58,7 @@ local isEncodable
 -- Const
 local rulesMeta = {
   indent = 4,  -- The number of space characters used in indentation
-  depth = 1,
+  initDepth = 1,
   include__ = false,  -- 是否包含: key 为 __xxx or xxx__
   includeInvalidData = false,  -- 是否导出不支持的格式 如function userData
 }
@@ -75,10 +75,13 @@ function json.encode (v, rules)
   if not getmetatable(rules) then
     setmetatable(rules, {__index=rulesMeta})
   end
+  return json._encode(v, rules.initDepth, rules)
+end
 
-  local lastIndentStr = string.rep(" ", rules.indent * (rules.depth - 1))
-  local indentStr = string.rep(" ", rules.indent * rules.depth)
-  rules.depth = rules.depth + 1
+function json._encode (v, depth, rules)
+  local lastIndentStr = string.rep(" ", rules.indent * ( depth - 1))
+  local indentStr = string.rep(" ", rules.indent * depth)
+  depth = depth + 1
   local newlineStr = rules.indent > 0 and "\n" or ""
 
   -- Handle nil values
@@ -105,21 +108,23 @@ function json.encode (v, rules)
     local bArray, maxCount = isArray(v)
     if bArray then
       for i = 1,maxCount do
-        table.insert(rval, indentStr .. json.encode(v[i], rules))
+        table.insert(rval, indentStr .. json._encode(v[i], depth, rules))
       end
     else	-- An object, not an array
       for i,j in pairs(v) do
         while true do
-          if rules.include__ then
-            if type(k) == "string" and (string.match(k, '^__') or string.match(k, '__$')) then
+          if not rules.include__ then
+            if type(i) == "string" and (string.match(i, '^__') or string.match(i, '__$')) then
               break
             end
           end
-          if rules.includeInvalidData or (isEncodable(i) and isEncodable(j)) then
-            local key = isEncodable(i) and json_private.encodeString(i) or tostring(i)
-            local value = isEncodable(j) and json.encode(j, rules) or '"' .. tostring(j) .. '"'
-            table.insert(rval, indentStr .. '"' .. key .. '":' .. value)
+          if not rules.includeInvalidData and (not isEncodable(i) or not isEncodable(j)) then
+            break
           end
+          local key = isEncodable(i) and json_private.encodeString(i) or tostring(i)
+          local value = isEncodable(j) and json._encode(j, depth, rules) or '"' .. tostring(j) .. '"'
+          table.insert(rval, indentStr .. '"' .. key .. '":' .. value)
+          break
         end
       end
     end
