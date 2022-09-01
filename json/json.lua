@@ -57,9 +57,9 @@ local isEncodable
 
 -- Const
 local rulesMeta = {
-  indent = 0,  -- The number of space characters used in indentation
+  indent = 4,  -- The number of space characters used in indentation
   depth = 1,
-  include__ = true,  -- 是否包含: key 为 __xxx or xxx__
+  include__ = false,  -- 是否包含: key 为 __xxx or xxx__
   includeInvalidData = false,  -- 是否导出不支持的格式 如function userData
 }
 -----------------------------------------------------------------------------
